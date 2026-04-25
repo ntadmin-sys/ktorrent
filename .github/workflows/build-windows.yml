@@ -18,33 +18,23 @@ jobs:
         run: |
           choco install --no-progress ninja
 
-      - name: Setup vcpkg (Using Mirror to avoid Git TTY issues)
+      # 修复 Git 安全配置（CI 必备）
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory "*"
+
+      # 正确克隆 vcpkg（官方 + 国内加速）
+      - name: Setup vcpkg
         run: |
-          # 1. 使用镜像源克隆（速度快且稳定）
-          # 清华大学的镜像通常包含了常用的 registry 配置或直接包含了 ports
-          git clone --depth 1 https://mirrors.tuna.tsinghua.edu.cn/git/vcpkg.git
-          
-          # 2. 初始化 vcpkg
+          git clone --depth 1 https://ghproxy.net/https://github.com/microsoft/vcpkg.git
           .\vcpkg\bootstrap-vcpkg.bat
 
-          # 3. 关键修复：配置 Git 策略，允许非安全的 HTTP 仓库访问（在 CI 环境中是安全的）
-          # 这解决了 "fatal: Cannot prompt because user interactivity has been disabled" 错误
-          git config --global --add safe.directory "*"
-          
-          # 4. 显式克隆 Qt 端口仓库（避免 vcpkg 内部调用 git）
-          # 既然我们要用 overlay，就手动把它拉下来
-          git clone --depth 1 https://github.com/microsoft/vcpkg-qtpackages.git vcpkg-qt-registry
-
-          # 5. 安装 Qt 依赖 (使用 overlay-ports 指向我们刚刚克隆的文件夹)
-          .\vcpkg\vcpkg install `
-            --overlay-ports=vcpkg-qt-registry/ports `
-            qt6-base:x64-windows `
-            qt6-tools:x64-windows `
-            qt6-svg:x64-windows
-
-      - name: Install KDE Frameworks
+      # 安装所有依赖（去掉了失效的 qtpackages，直接用官方 vcpkg 端口）
+      - name: Install dependencies via vcpkg
         run: |
           .\vcpkg\vcpkg install `
+            qt6-base:x64-windows `
+            qt6-tools:x64-windows `
+            qt6-svg:x64-windows `
             kcoreaddons:x64-windows `
             ki18n:x64-windows `
             kconfig:x64-windows `

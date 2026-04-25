@@ -17,7 +17,7 @@ jobs:
 
       - name: Install Windows Cross-compile Dependencies
         run: |
-          echo "Installing MinGW and Qt5 dependencies..."
+          echo "Installing MinGW, Qt5, and KDE ECM dependencies..."
           sudo apt-get update
           sudo apt-get install -y \
             gcc-mingw-w64-x86-64 \
@@ -26,6 +26,7 @@ jobs:
             qttools5-dev \
             qttools5-dev-tools \
             libqt5svg5-dev \
+            extra-cmake-modules \
             cmake \
             ninja-build
 

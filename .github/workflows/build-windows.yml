@@ -8,29 +8,58 @@ on:
 
 jobs:
   build-windows:
-    # 切换到 Windows 环境
     runs-on: windows-latest
 
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Install Base Tools (Chocolatey for easy setup)
+      - name: Install Ninja (faster builds)
         run: |
-          # 安装 Chocolatey 包管理器 (如果不存在)
-          if (!(Get-Command choco -ErrorAction SilentlyContinue)) {
-            Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-          }
           choco install --no-progress ninja
 
-      # 1. Setup vcpkg
-      - name: Setup vcpkg
+      # 1. Create vcpkg.json to register the Qt registry
+      - name: Setup vcpkg with Qt Registry
         run: |
           git clone https://github.com/microsoft/vcpkg.git
-          .\vcpkg\bootstrap-vcpkg.bat
           
-          # 安装依赖：使用 x64-windows (MSVC) 三元组
-          # 这是 vcpkg 官方支持最完善的组合
+          # 关键步骤：创建 vcpkg.json 文件来启用 Qt 的官方仓库
+          cat > vcpkg.json << EOF
+          {
+            "dependencies": [
+              "qt6-base",
+              "qt6-tools",
+              "qt6-svg",
+              "kcoreaddons",
+              "ki18n",
+              "kconfig",
+              "kwindowsystem",
+              "knotifications"
+            ],
+            "registries": [
+              {
+                "baseline": "f8f72ba852ba93e7391f845352c498a24c35cfe0",
+                "packages": [ "qt6-*" ],
+                "kind": "git",
+                "repository": "https://github.com/microsoft/vcpkg-qtpackages.git"
+              }
+            ]
+          }
+          EOF
+
+          # 初始化 vcpkg
+          .\vcpkg\bootstrap-vcpkg.bat
+
+      # 2. Install Dependencies
+      - name: Install Dependencies
+        run: |
+          # 使用 vcpkg 安装依赖
+          # 注意：这里使用 x64-windows (MSVC)
+          .\vcpkg\vcpkg install `
+            --triplet x64-windows `
+            --dry-run | Out-Null # 先解析依赖，防止缓存干扰
+          
+          # 实际安装
           .\vcpkg\vcpkg install `
             qt6-base:x64-windows `
             qt6-tools:x64-windows `
@@ -41,7 +70,7 @@ jobs:
             kwindowsystem:x64-windows `
             knotifications:x64-windows
 
-      # 2. Configure & Build
+      # 3. Configure & Build
       - name: Configure & Build
         run: |
           mkdir build
@@ -49,22 +78,25 @@ jobs:
           
           cmake .. `
             -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake `
-            -DVCPKG_TARGET_TRIPLET=x64-windows ` # 使用 MSVC 动态链接
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_INSTALL_PREFIX=../install
+            -DCMAKE_INSTALL_PREFIX=../install `
+            -GNinja # 强制使用 Ninja，比 MSVC 默认的慢速多处理器编译更稳定
 
           cmake --build . --config Release
 
-      # 3. Package
+      # 4. Package
       - name: Package with Dependencies
         run: |
-          # 使用 vcpkg 自带的工具或手动复制
           mkdir -p release
-          cp Debug/ktorrent.exe release/ # 或者 Release/，取决于 CMake 配置
           
-          # MSVC 程序通常需要 vcredist，或者我们将 DLL 拷贝进去
-          # 这里简单处理：假设 CMake 已经把依赖拷贝到了 bin 目录
-          cp bin/*.dll release/ 2>$null
+          # 复制可执行文件
+          cp src/Release/ktorrent.exe release/ # 路径可能需要根据实际生成位置微调
+          
+          # 收集 DLL (KDE/Qt 程序通常需要 WinDeployQt，但这里简单拷贝 vcpkg 提供的)
+          # 这里使用一个简单的脚本将依赖的 DLL 拷贝过来
+          # 注意：实际路径可能在 vcpkg/installed/x64-windows/bin
+          cp ../vcpkg/installed/x64-windows/bin/*.dll release/ -Recurse -ErrorAction SilentlyContinue
           
           # 打包
           Compress-Archive -Path release/* -DestinationPath ktorrent-windows.zip

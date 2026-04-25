@@ -20,22 +20,25 @@ jobs:
         run: |
           choco install --no-progress ninja
 
-      - name: Configure Git safe directory
-        run: git config --global --add safe.directory "*"
+      - name: Fix Git credentials (disable prompt)
+        run: |
+          git config --global core.askPass ""
+          git config --global credential.helper cache
+          git config --global add safe.directory "*"
 
-      # ==================== 关键修复：只用官方源，无任何镜像 ====================
-      - name: Setup vcpkg (Official, stable in CI)
+      # 官方 vcpkg，GitHub Actions 最稳
+      - name: Setup vcpkg
         run: |
           git clone --depth 1 https://github.com/microsoft/vcpkg.git
           .\vcpkg\bootstrap-vcpkg.bat
 
-      # ==================== 克隆 KDE 官方 vcpkg 端口 ====================
-      - name: Clone KDE vcpkg ports
+      # ✅ 关键：用 GitHub 镜像克隆 kde-vcpkg，不会弹登录
+      - name: Clone KDE vcpkg (GitHub mirror, no login)
         run: |
-          git clone --depth 1 https://invent.kde.org/sdk/kde-vcpkg.git
+          git clone --depth 1 https://github.com/KDE/kde-vcpkg.git
 
-      # ==================== 安装依赖（Qt6 + KDE） ====================
-      - name: Install dependencies via vcpkg
+      # 安装所有依赖
+      - name: Install dependencies
         run: |
           .\vcpkg\vcpkg install `
             --overlay-ports=kde-vcpkg/ports `
@@ -48,19 +51,16 @@ jobs:
             kwindowsystem:x64-windows `
             knotifications:x64-windows
 
-      # ==================== 编译 ====================
       - name: Configure & Build
         run: |
           mkdir build
           cd build
-          
           cmake .. `
             -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake `
             -DVCPKG_OVERLAY_PORTS=../kde-vcpkg/ports `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
             -GNinja
-
           cmake --build . --config Release
 
       - name: Upload Artifacts

@@ -1,4 +1,4 @@
-name: Build ktorrent for Windows (Qt6 + KDE SDK)
+name: Build ktorrent for Windows (Qt6 + MinGW)
 
 on:
   push:
@@ -14,56 +14,36 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      # 1. 安装基础工具 (不含 KF6 库)
       - name: Install Base Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            gcc-mingw-w64-x86-64 \
+            g++-mingw-w64-x86-64 \
             ninja-build \
             zip \
-            curl \
-            wget \
             ca-certificates
 
-      # 2. 下载并安装 KDE Craft SDK (包含 Qt6 和 KF6)
-      # 我们使用 KDE 官方提供的预编译 SDK，这是最稳妥的方式
-      - name: Setup KDE Craft SDK
-        run: |
-          echo "Downloading KDE Craft SDK..."
-          # 创建安装目录
-          mkdir -p /opt/kde
-          # 下载 Craft 蓝图的预编译包 (这是一个包含 Qt6 和 KF6 的完整环境)
-          # 注意：这里我们直接下载一个包含 MSVC/MinGW 的包，或者使用 Craft 本身
-          # 为了简化，我们尝试使用一个通用的 MinGW 包或者 Craft 的构建产物
-          
-          # 由于直接下载完整 SDK 较大且链接常变，这里推荐使用 Craft 的 CI 镜像
-          # 或者直接下载 Qt6 的 MinGW 包
-          # 这里采用一种更通用的方法：使用 Docker 镜像中的内容（如果不使用容器，则需手动下载）
-          
-          # 替代方案：直接下载 Qt6 MinGW 安装包 (开源版)
-          # 由于 Qt 官方下载需要账号，我们这里回退到使用 apt 安装基础的 mingw 编译器
-          # 然后手动下载 KF6 的 Windows 二进制包
-          
-          sudo apt-get install -y gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
-          
-          # 设置环境变量，让 CMake 能找到这些工具
-          echo "/usr/x86_64-w64-mingw32" >> $GITHUB_PATH
-
-      # 3. 下载 KF6 Windows 库 (手动方式)
-      # 由于 apt 没有 mingw 版的 KF6，我们需要从 KDE 的构建服务器下载
-      # 或者，更简单的办法：只编译核心部分，或者使用 vcpkg
-      # 这里我们尝试使用 vcpkg 来管理依赖，这比 apt 更靠谱
-      
-      - name: Setup vcpkg for Windows Dependencies
+      # 1. Setup vcpkg with MinGW triplet
+      - name: Setup vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg.git
           cd vcpkg
           ./bootstrap-vcpkg.sh
-          # 安装 Qt6 和 KDE 库的 Windows x64 版本
-          # 注意：vcpkg 需要时间编译，但在 CI 中是可行的
-          ./vcpkg install qtbase:windows-x64 qttools:windows-x64 kcoreaddons:windows-x64 ki18n:windows-x64 kconfig:windows-x64 kwindowsystem:windows-x64 knotifications:windows-x64
+          
+          # 安装依赖：使用 x64-mingw-dynamic 三元组
+          # 注意：ktorrent 依赖较多，这里列出了核心 KDE 依赖，如果报错缺包请在此处追加
+          ./vcpkg install \
+            qt6-base:x64-mingw-dynamic \
+            qt6-tools:x64-mingw-dynamic \
+            qt6-svg:x64-mingw-dynamic \
+            kcoreaddons:x64-mingw-dynamic \
+            ki18n:x64-mingw-dynamic \
+            kconfig:x64-mingw-dynamic \
+            kwindowsystem:x64-mingw-dynamic \
+            knotifications:x64-mingw-dynamic
 
-      # 4. 编译
+      # 2. Configure & Build
       - name: Configure & Build
         run: |
           mkdir -p build
@@ -71,21 +51,44 @@ jobs:
           
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_TARGET_TRIPLET=x64-mingw-dynamic \ # 关键：告诉 vcpkg 我们用的是 MinGW
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+            -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres \
             -DCMAKE_INSTALL_PREFIX=../install
 
-      # 5. 打包
-      - name: Package
+          cmake --build . --target all -- -j$(nproc)
+
+      # 3. Package (Manual DLL collection for MinGW)
+      - name: Package with Dependencies
         run: |
-          # 使用 vcpkg 的依赖拷贝工具或者手动拷贝
-          # 这里简单打包
           mkdir -p release
+          
+          # 复制主程序
           cp build/ktorrent.exe release/
-          # 这里需要复杂的 dll 拷贝逻辑，暂略，重点先解决编译问题
-          zip -r ktorrent.zip release
+          
+          # 手动收集 DLL (MinGW 和 Qt 依赖)
+          # 获取 vcpkg 安装的 Qt 库路径
+          QT_DLL_PATH=$(find vcpkg/installed/x64-mingw-dynamic/bin -name "Qt6*.dll" -exec dirname {} \; | head -n 1)
+          
+          # 复制所有 Qt6 DLL
+          cp $QT_DLL_PATH/Qt6*.dll release/ 2>/dev/null || true
+          
+          # 复制 MinGW 运行时
+          cp /usr/x86_64-w64-mingw32/lib/libgcc_s_seh-1.dll release/ 2>/dev/null || true
+          cp /usr/x86_64-w64-mingw32/lib/libstdc++-6.dll release/ 2>/dev/null || true
+          cp /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll release/ 2>/dev/null || true
+          
+          # 复制平台插件 (非常重要)
+          mkdir -p release/platforms
+          cp $QT_DLL_PATH/platforms/qwindows.dll release/platforms/ 2>/dev/null || true
+          
+          # 打包
+          zip -r ktorrent-windows-qt6.zip release/
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ktorrent-windows
-          path: ktorrent.zip
+          name: ktorrent-windows-qt6
+          path: ktorrent-windows-qt6.zip

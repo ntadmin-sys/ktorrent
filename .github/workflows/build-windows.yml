@@ -20,21 +20,25 @@ jobs:
         run: |
           choco install --no-progress ninja
 
-      - name: Fix Git credentials & safe directory
+      # 🔥 核心：彻底禁用 Git 所有交互、所有凭证提示
+      - name: Disable Git interactive prompts
         run: |
-          git config --global core.askPass ""
-          git config --global credential.helper cache
+          git config --global core.askPass "false"
+          git config --global credential.modalPrompt false
           git config --global --add safe.directory "*"
 
+      # 克隆 vcpkg（官方，稳定）
       - name: Setup vcpkg
         run: |
           git clone --depth 1 https://github.com/microsoft/vcpkg.git
           .\vcpkg\bootstrap-vcpkg.bat
 
-      - name: Clone KDE vcpkg (GitHub mirror)
+      # 🔥 关键：用 HTTPS 无交互格式克隆，彻底不弹登录
+      - name: Clone KDE vcpkg (NO LOGIN)
         run: |
-          git clone --depth 1 https://github.com/KDE/kde-vcpkg.git
+          git clone --depth 1 https://anonymous:@github.com/KDE/kde-vcpkg.git
 
+      # 安装依赖
       - name: Install dependencies
         run: |
           .\vcpkg\vcpkg install `
@@ -48,6 +52,7 @@ jobs:
             kwindowsystem:x64-windows `
             knotifications:x64-windows
 
+      # 构建
       - name: Configure & Build
         run: |
           mkdir build

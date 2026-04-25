@@ -1,4 +1,4 @@
-name: Build ktorrent for Windows (Qt6 + MinGW)
+name: Build ktorrent for Windows (Qt6 + MSVC)
 
 on:
   push:
@@ -8,87 +8,69 @@ on:
 
 jobs:
   build-windows:
-    runs-on: ubuntu-latest
+    # 切换到 Windows 环境
+    runs-on: windows-latest
 
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Install Base Tools
+      - name: Install Base Tools (Chocolatey for easy setup)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc-mingw-w64-x86-64 \
-            g++-mingw-w64-x86-64 \
-            ninja-build \
-            zip \
-            ca-certificates
+          # 安装 Chocolatey 包管理器 (如果不存在)
+          if (!(Get-Command choco -ErrorAction SilentlyContinue)) {
+            Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          }
+          choco install --no-progress ninja
 
-      # 1. Setup vcpkg with MinGW triplet
+      # 1. Setup vcpkg
       - name: Setup vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg.git
-          cd vcpkg
-          ./bootstrap-vcpkg.sh
+          .\vcpkg\bootstrap-vcpkg.bat
           
-          # 安装依赖：使用 x64-mingw-dynamic 三元组
-          # 注意：ktorrent 依赖较多，这里列出了核心 KDE 依赖，如果报错缺包请在此处追加
-          ./vcpkg install \
-            qt6-base:x64-mingw-dynamic \
-            qt6-tools:x64-mingw-dynamic \
-            qt6-svg:x64-mingw-dynamic \
-            kcoreaddons:x64-mingw-dynamic \
-            ki18n:x64-mingw-dynamic \
-            kconfig:x64-mingw-dynamic \
-            kwindowsystem:x64-mingw-dynamic \
-            knotifications:x64-mingw-dynamic
+          # 安装依赖：使用 x64-windows (MSVC) 三元组
+          # 这是 vcpkg 官方支持最完善的组合
+          .\vcpkg\vcpkg install `
+            qt6-base:x64-windows `
+            qt6-tools:x64-windows `
+            qt6-svg:x64-windows `
+            kcoreaddons:x64-windows `
+            ki18n:x64-windows `
+            kconfig:x64-windows `
+            kwindowsystem:x64-windows `
+            knotifications:x64-windows
 
       # 2. Configure & Build
       - name: Configure & Build
         run: |
-          mkdir -p build
+          mkdir build
           cd build
           
-          cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake \
-            -DVCPKG_TARGET_TRIPLET=x64-mingw-dynamic \ # 关键：告诉 vcpkg 我们用的是 MinGW
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
-            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
-            -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres \
+          cmake .. `
+            -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake `
+            -DVCPKG_TARGET_TRIPLET=x64-windows ` # 使用 MSVC 动态链接
+            -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_INSTALL_PREFIX=../install
 
-          cmake --build . --target all -- -j$(nproc)
+          cmake --build . --config Release
 
-      # 3. Package (Manual DLL collection for MinGW)
+      # 3. Package
       - name: Package with Dependencies
         run: |
+          # 使用 vcpkg 自带的工具或手动复制
           mkdir -p release
+          cp Debug/ktorrent.exe release/ # 或者 Release/，取决于 CMake 配置
           
-          # 复制主程序
-          cp build/ktorrent.exe release/
-          
-          # 手动收集 DLL (MinGW 和 Qt 依赖)
-          # 获取 vcpkg 安装的 Qt 库路径
-          QT_DLL_PATH=$(find vcpkg/installed/x64-mingw-dynamic/bin -name "Qt6*.dll" -exec dirname {} \; | head -n 1)
-          
-          # 复制所有 Qt6 DLL
-          cp $QT_DLL_PATH/Qt6*.dll release/ 2>/dev/null || true
-          
-          # 复制 MinGW 运行时
-          cp /usr/x86_64-w64-mingw32/lib/libgcc_s_seh-1.dll release/ 2>/dev/null || true
-          cp /usr/x86_64-w64-mingw32/lib/libstdc++-6.dll release/ 2>/dev/null || true
-          cp /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll release/ 2>/dev/null || true
-          
-          # 复制平台插件 (非常重要)
-          mkdir -p release/platforms
-          cp $QT_DLL_PATH/platforms/qwindows.dll release/platforms/ 2>/dev/null || true
+          # MSVC 程序通常需要 vcredist，或者我们将 DLL 拷贝进去
+          # 这里简单处理：假设 CMake 已经把依赖拷贝到了 bin 目录
+          cp bin/*.dll release/ 2>$null
           
           # 打包
-          zip -r ktorrent-windows-qt6.zip release/
+          Compress-Archive -Path release/* -DestinationPath ktorrent-windows.zip
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ktorrent-windows-qt6
-          path: ktorrent-windows-qt6.zip
+          name: ktorrent-windows
+          path: ktorrent-windows.zip

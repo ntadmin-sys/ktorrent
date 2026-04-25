@@ -23,8 +23,8 @@ jobs:
         run: |
           git clone https://github.com/microsoft/vcpkg.git
           
-          # 关键步骤：创建 vcpkg.json 文件来启用 Qt 的官方仓库
-          cat > vcpkg.json << EOF
+          # PowerShell 多行字符串
+          $vcpkgJson = @"
           {
             "dependencies": [
               "qt6-base",
@@ -45,7 +45,8 @@ jobs:
               }
             ]
           }
-          EOF
+          "@
+          $vcpkgJson | Out-File -FilePath vcpkg\vcpkg.json -Encoding UTF8
 
           # 初始化 vcpkg
           .\vcpkg\bootstrap-vcpkg.bat
@@ -54,12 +55,6 @@ jobs:
       - name: Install Dependencies
         run: |
           # 使用 vcpkg 安装依赖
-          # 注意：这里使用 x64-windows (MSVC)
-          .\vcpkg\vcpkg install `
-            --triplet x64-windows `
-            --dry-run | Out-Null # 先解析依赖，防止缓存干扰
-          
-          # 实际安装
           .\vcpkg\vcpkg install `
             qt6-base:x64-windows `
             qt6-tools:x64-windows `
@@ -80,29 +75,12 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_INSTALL_PREFIX=../install `
-            -GNinja # 强制使用 Ninja，比 MSVC 默认的慢速多处理器编译更稳定
+            -GNinja
 
           cmake --build . --config Release
-
-      # 4. Package
-      - name: Package with Dependencies
-        run: |
-          mkdir -p release
-          
-          # 复制可执行文件
-          cp src/Release/ktorrent.exe release/ # 路径可能需要根据实际生成位置微调
-          
-          # 收集 DLL (KDE/Qt 程序通常需要 WinDeployQt，但这里简单拷贝 vcpkg 提供的)
-          # 这里使用一个简单的脚本将依赖的 DLL 拷贝过来
-          # 注意：实际路径可能在 vcpkg/installed/x64-windows/bin
-          cp ../vcpkg/installed/x64-windows/bin/*.dll release/ -Recurse -ErrorAction SilentlyContinue
-          
-          # 打包
-          Compress-Archive -Path release/* -DestinationPath ktorrent-windows.zip
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ktorrent-windows
-          path: ktorrent-windows.zip
+          path: build/src/ktorrent.exe # 根据实际生成路径调整

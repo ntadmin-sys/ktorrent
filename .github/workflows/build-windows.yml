@@ -1,4 +1,4 @@
-name: Build ktorrent for Windows (Native Cross-compile)
+name: Build & Package ktorrent (Qt6 Windows)
 
 on:
   push:
@@ -14,42 +14,32 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      # 1. 安装基础依赖（包含旧版 ECM，作为基础）
-      - name: Install System Dependencies
+      # 1. 安装依赖
+      - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             gcc-mingw-w64-x86-64 \
             g++-mingw-w64-x86-64 \
-            qtbase5-dev \
-            qttools5-dev \
-            qttools5-dev-tools \
-            libqt5svg5-dev \
+            qt6-base-dev:amd64 \
+            qt6-tools-dev:amd64 \
+            qt6-svg-dev:amd64 \
+            libkf6coreaddons-dev:amd64 \
+            libkf6i18n-dev:amd64 \
+            libkf6config-dev:amd64 \
+            libkf6windowsystem-dev:amd64 \
+            libkf6notifications-dev:amd64 \
             extra-cmake-modules \
             cmake \
             ninja-build \
-            git
+            git \
+            zip  # 安装 zip 工具用于打包
 
-      # 2. 【新增步骤】手动编译安装最新版 ECM
-      - name: Build and Install Latest ECM
-        run: |
-          echo "Building latest ECM (v5.240.0+)..."
-          git clone --depth 1 https://invent.kde.org/frameworks/extra-cmake-modules.git /tmp/ecm
-          cd /tmp/ecm
-          mkdir build && cd build
-          cmake .. \
-            -DCMAKE_INSTALL_PREFIX=/usr \
-            -DCMAKE_BUILD_TYPE=Release
-          sudo make install
-          # 清理缓存，防止 CMake 找到旧版缓存
-          rm -rf /usr/share/ECM/cmake/ECMCache.cmake
-
-      # 3. 配置项目
-      - name: Configure Build (CMake)
+      # 2. 编译
+      - name: Configure & Build
         run: |
           mkdir -p build
           cd build
-          
           cmake .. \
             -DCMAKE_SYSTEM_NAME=Windows \
             -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
@@ -57,16 +47,56 @@ jobs:
             -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres \
             -DCMAKE_FIND_ROOT_PATH=/usr/x86_64-w64-mingw32 \
             -DCMAKE_INSTALL_PREFIX=/tmp/kde-install \
-            -DCMAKE_BUILD_TYPE=Release
-
-      # 4. 编译
-      - name: Build Project
-        run: |
-          cd build
+            -DCMAKE_BUILD_TYPE=Release \
+            -DQT_MAJOR_VERSION=6
           make -j$(nproc)
 
+      # 3. 【新增】打包依赖 (手动模拟 windeployqt)
+      - name: Package Dependencies
+        run: |
+          echo "Creating deployment package..."
+          
+          # 创建发布文件夹
+          mkdir -p release
+          # 复制主程序
+          cp build/ktorrent.exe release/
+          
+          # 定义搜索路径：MinGW 运行时 + Qt6 库路径
+          # 注意：路径可能随 Ubuntu 版本变化，这里使用了通配符查找
+          SEARCH_PATHS="/usr/x86_64-w64-mingw32/lib /usr/x86_64-w64-mingw32/qt6/bin"
+          
+          # 分析依赖并复制 DLL
+          # 1. 使用 x86_64-w64-mingw32-objdump 分析 exe 的导入表
+          # 2. 过滤出 .dll 文件
+          # 3. 在搜索路径中查找并复制到 release 目录
+          cd release
+          for dll in $(objdump -p ktorrent.exe | grep "DLL Name" | awk '{print $3}'); do
+            # 尝试在各个路径下寻找 dll
+            for path in $SEARCH_PATHS; do
+              if [ -f "$path/$dll" ]; then
+                cp "$path/$dll" . 2>/dev/null || true
+                echo "Copied: $dll"
+                break
+              fi
+            done
+          done
+          
+          # 4. 复制 Qt 插件 (platforms/qwindows.dll 是必须的)
+          # 查找 qwindows.dll 的位置
+          QWINDOWS_DLL=$(find /usr/x86_64-w64-mingw32/qt6/plugins/platforms -name "qwindows.dll" 2>/dev/null | head -n 1)
+          if [ ! -z "$QWINDOWS_DLL" ]; then
+            mkdir -p platforms
+            cp "$QWINDOWS_DLL" platforms/
+            echo "Copied platform plugin: qwindows.dll"
+          fi
+
+          # 5. 打包成 zip
+          cd ..
+          zip -r ktorrent-windows-qt6.zip release/
+
+      # 4. 上传产物
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ktorrent-windows-binary
-          path: build/ktorrent.exe
+          name: ktorrent-windows-qt6
+          path: ktorrent-windows-qt6.zip

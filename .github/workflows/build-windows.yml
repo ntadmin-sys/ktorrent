@@ -10,26 +10,21 @@ jobs:
   build-windows:
     runs-on: ubuntu-latest
     container:
-      # 修改点：使用 Docker Hub 的镜像地址，避免 registry.kde.org 无法访问的问题
-      image: kdeorg/craft-blueprints:kf5-qt5-windows-msvc2019
+      # 关键修改：使用 docker.io/mirror.gcr.io/ 作为代理来拉取镜像
+      image: docker.io/mirror.gcr.io/registry.kde.org/craft/craft-blueprints:kf5-qt5-windows-msvc2019
 
     steps:
-      # 步骤 1: 检出代码
       - name: Checkout ktorrent source code
         uses: actions/checkout@v4
 
-      # 步骤 2: 编译
       - name: Build ktorrent for Windows
         run: |
           echo "Starting build process..."
           mkdir -p build
           cd build
           
-          # 配置 CMake
-          # 注意：请确保你的项目根目录包含 CMakeLists.txt
           cmake .. \
             -DCMAKE_INSTALL_PREFIX=/opt/kde \
             -DCMAKE_TOOLCHAIN_FILE=/opt/craft/cmake/toolchain-windows-msvc2019.cmake
           
-          # 开始编译
           make -j$(nproc)

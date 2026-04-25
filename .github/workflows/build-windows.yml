@@ -18,13 +18,16 @@ jobs:
         run: |
           choco install --no-progress ninja
 
-      - name: Setup vcpkg (Using Mirror to avoid Git TTY issues)
+      - name: Setup vcpkg (Fix Mirror URL)
         run: |
-          # 1. 使用镜像源克隆（速度快且稳定）
-          # 清华大学的镜像通常包含了常用的 registry 配置或直接包含了 ports
+          # 1. 修正镜像地址：移除了 URL 末尾可能存在的非法字符
+          # 正确地址：https://mirrors.tuna.tsinghua.edu.cn/git/vcpkg.git
           git clone --depth 1 https://mirrors.tuna.tsinghua.edu.cn/git/vcpkg.git
           
-          # 2. 初始化 vcpkg
+          # 2. 关键修复：配置 Git 安全目录，避免 TTY 错误
+          git config --global --add safe.directory "*"
+          
+          # 3. 初始化 vcpkg
           .\vcpkg\bootstrap-vcpkg.bat
 
           # 3. 关键修复：配置 Git 策略，允许非安全的 HTTP 仓库访问（在 CI 环境中是安全的）

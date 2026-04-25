@@ -11,49 +11,39 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout source code
+      - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install Ninja
-        run: |
-          choco install --no-progress ninja
+        run: choco install --no-progress ninja
 
-      - name: Configure Git safe directory
-        run: git config --global --add safe.directory "*"
-
-      - name: Setup vcpkg
+      - name: Setup vcpkg + KDE ports
         run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git
+          git clone --depth 1 https://ghproxy.net/https://github.com/microsoft/vcpkg.git
           .\vcpkg\bootstrap-vcpkg.bat
+          git clone --depth 1 https://ghproxy.net/https://invent.kde.org/sdk/kde-vcpkg.git
 
-      # ✅ 关键修复：Qt6 包名全部改成 vcpkg 最新格式
-      - name: Install dependencies via vcpkg
+      - name: Install all dependencies
         run: |
           .\vcpkg\vcpkg install `
-            qtbase:x64-windows `
-            qttools:x64-windows `
-            qtsvg:x64-windows `
-            kcoreaddons:x64-windows `
-            ki18n:x64-windows `
-            kconfig:x64-windows `
-            kwindowsystem:x64-windows `
-            knotifications:x64-windows
+            --overlay-ports=kde-vcpkg/ports `
+            qtbase qttools qtsvg `
+            kcoreaddons ki18n kconfig kwindowsystem knotifications `
+            --triplet=x64-windows
 
-      - name: Configure & Build
+      - name: Build
         run: |
-          mkdir build
-          cd build
-          
+          mkdir build && cd build
           cmake .. `
             -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake `
+            -DVCPKG_OVERLAY_PORTS=../kde-vcpkg/ports `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DCMAKE_BUILD_TYPE=Release `
             -GNinja
-
           cmake --build . --config Release
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: ktorrent-windows
           path: build/src/Release/ktorrent.exe

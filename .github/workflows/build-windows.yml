@@ -18,23 +18,21 @@ jobs:
         run: |
           choco install --no-progress ninja
 
-      # 修复 Git 安全配置（CI 必备）
       - name: Configure Git safe directory
         run: git config --global --add safe.directory "*"
 
-      # 正确克隆 vcpkg（官方 + 国内加速）
       - name: Setup vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git
           .\vcpkg\bootstrap-vcpkg.bat
-          
-      # 安装所有依赖（去掉了失效的 qtpackages，直接用官方 vcpkg 端口）
+
+      # ✅ 关键修复：Qt6 包名全部改成 vcpkg 最新格式
       - name: Install dependencies via vcpkg
         run: |
           .\vcpkg\vcpkg install `
-            qt6-base:x64-windows `
-            qt6-tools:x64-windows `
-            qt6-svg:x64-windows `
+            qtbase:x64-windows `
+            qttools:x64-windows `
+            qtsvg:x64-windows `
             kcoreaddons:x64-windows `
             ki18n:x64-windows `
             kconfig:x64-windows `

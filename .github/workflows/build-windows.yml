@@ -16,52 +16,26 @@ jobs:
         with:
           submodules: true
 
-      - name: Install Ninja
-        run: |
-          choco install --no-progress ninja
+      - name: Setup Qt6 (Official Installer, No vcpkg KDE)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2019_64'
+          modules: 'qtbase qttools qtsvg'
 
-      # 彻底禁用Git交互、安全目录
-      - name: Disable Git prompts & safe directory
+      - name: Install Ninja + CMake
         run: |
-          git config --global core.askPass "false"
-          git config --global credential.modalPrompt false
-          git config --global --add safe.directory "*"
+          choco install --no-progress ninja cmake
 
-      # 克隆vcpkg官方
-      - name: Setup vcpkg
-        run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git
-          .\vcpkg\bootstrap-vcpkg.bat
-
-      # ✅ 替换为正确的KDE vcpkg overlay（无登录、404修复）
-      - name: Clone KDE vcpkg overlay (correct repo)
-        run: |
-          git clone --depth 1 https://anonymous:@invent.kde.org/wrobelda/vcpkg.git kde-vcpkg
-
-      # 安装依赖，指定overlay ports路径
-      - name: Install dependencies
-        run: |
-          .\vcpkg\vcpkg install `
-            --overlay-ports=kde-vcpkg/ports `
-            qtbase:x64-windows `
-            qttools:x64-windows `
-            qtsvg:x64-windows `
-            kcoreaddons:x64-windows `
-            ki18n:x64-windows `
-            kconfig:x64-windows `
-            kwindowsystem:x64-windows `
-            knotifications:x64-windows
-
-      # 配置编译
-      - name: Configure & Build
+      - name: Configure & Build (No KDE, No vcpkg)
         run: |
           mkdir build
           cd build
           cmake .. `
-            -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake `
-            -DVCPKG_OVERLAY_PORTS=../kde-vcpkg/ports `
-            -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_KDE_FRAMEWORKS=OFF `
             -GNinja
           cmake --build . --config Release
 

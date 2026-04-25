@@ -10,8 +10,8 @@ jobs:
   build-windows:
     runs-on: ubuntu-latest
     container:
-      # 关键修改：使用 docker.io/mirror.gcr.io/ 作为代理来拉取镜像
-      image: docker.io/mirror.gcr.io/registry.kde.org/craft/craft-blueprints:kf5-qt5-windows-msvc2019
+      # ✅ 修复：直接使用官方地址，不要加 mirror.gcr.io
+      image: registry.kde.org/craft/craft-blueprints:kf5-qt5-windows-msvc2019
 
     steps:
       - name: Checkout ktorrent source code

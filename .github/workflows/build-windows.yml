@@ -9,15 +9,14 @@ on:
 jobs:
   build-windows:
     runs-on: ubuntu-latest
-    # 🚫 移除了 container 字段，我们直接在 Ubuntu 上运行
 
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Install Windows Cross-compile Dependencies
+      # 1. 安装基础依赖（包含旧版 ECM，作为基础）
+      - name: Install System Dependencies
         run: |
-          echo "Installing MinGW, Qt5, and KDE ECM dependencies..."
           sudo apt-get update
           sudo apt-get install -y \
             gcc-mingw-w64-x86-64 \
@@ -28,14 +27,29 @@ jobs:
             libqt5svg5-dev \
             extra-cmake-modules \
             cmake \
-            ninja-build
+            ninja-build \
+            git
 
+      # 2. 【新增步骤】手动编译安装最新版 ECM
+      - name: Build and Install Latest ECM
+        run: |
+          echo "Building latest ECM (v5.240.0+)..."
+          git clone --depth 1 https://invent.kde.org/frameworks/extra-cmake-modules.git /tmp/ecm
+          cd /tmp/ecm
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DCMAKE_BUILD_TYPE=Release
+          sudo make install
+          # 清理缓存，防止 CMake 找到旧版缓存
+          rm -rf /usr/share/ECM/cmake/ECMCache.cmake
+
+      # 3. 配置项目
       - name: Configure Build (CMake)
         run: |
           mkdir -p build
           cd build
           
-          # 使用 MinGW 工具链进行交叉编译
           cmake .. \
             -DCMAKE_SYSTEM_NAME=Windows \
             -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
@@ -45,6 +59,7 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=/tmp/kde-install \
             -DCMAKE_BUILD_TYPE=Release
 
+      # 4. 编译
       - name: Build Project
         run: |
           cd build
@@ -54,4 +69,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ktorrent-windows-binary
-          path: build/ktorrent.exe # 假设生成的可执行文件名为 ktorrent.exe
+          path: build/ktorrent.exe

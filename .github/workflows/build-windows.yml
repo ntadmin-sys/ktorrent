@@ -11,7 +11,7 @@ jobs:
     # 使用 KDE 官方提供的 Windows 交叉编译镜像
     runs-on: ubuntu-latest
     container:
-      image: registry.kde.org/craft/craft-blueprints:kf5-qt5-windows-msvc2019
+      image: image: kdeorg/craft-blueprints:kf5-qt5-windows-msvc2019
 
     steps:
     # 1. 检出你的 ktorrent 源代码

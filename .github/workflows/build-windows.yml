@@ -1,4 +1,4 @@
-name: Build ktorrent for Windows
+name: Build ktorrent for Windows (Native Cross-compile)
 
 on:
   push:
@@ -9,21 +9,48 @@ on:
 jobs:
   build-windows:
     runs-on: ubuntu-latest
-    container:
-      # ✅ 修复：直接使用官方地址，不要加 mirror.gcr.io
-      image: kde/craft:kf5-qt5-windows-msvc2019
+    # 🚫 移除了 container 字段，我们直接在 Ubuntu 上运行
+
     steps:
-      - name: Checkout ktorrent source code
+      - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Build ktorrent for Windows
+      - name: Install Windows Cross-compile Dependencies
         run: |
-          echo "Starting build process..."
+          echo "Installing MinGW and Qt5 dependencies..."
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc-mingw-w64-x86-64 \
+            g++-mingw-w64-x86-64 \
+            qtbase5-dev \
+            qttools5-dev \
+            qttools5-dev-tools \
+            libqt5svg5-dev \
+            cmake \
+            ninja-build
+
+      - name: Configure Build (CMake)
+        run: |
           mkdir -p build
           cd build
           
+          # 使用 MinGW 工具链进行交叉编译
           cmake .. \
-            -DCMAKE_INSTALL_PREFIX=/opt/kde \
-            -DCMAKE_TOOLCHAIN_FILE=/opt/craft/cmake/toolchain-windows-msvc2019.cmake
-          
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+            -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres \
+            -DCMAKE_FIND_ROOT_PATH=/usr/x86_64-w64-mingw32 \
+            -DCMAKE_INSTALL_PREFIX=/tmp/kde-install \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Project
+        run: |
+          cd build
           make -j$(nproc)
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ktorrent-windows-binary
+          path: build/ktorrent.exe # 假设生成的可执行文件名为 ktorrent.exe

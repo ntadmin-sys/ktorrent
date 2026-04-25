@@ -1,0 +1,35 @@
+name: Build ktorrent for Windows
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+jobs:
+  build-windows:
+    # 使用 KDE 官方提供的 Windows 交叉编译镜像
+    runs-on: ubuntu-latest
+    container:
+      image: registry.kde.org/craft/craft-blueprints:kf5-qt5-windows-msvc2019
+
+    steps:
+    # 1. 检出你的 ktorrent 源代码
+    - name: Checkout ktorrent source code
+      uses: actions/checkout@v4
+
+    # 2. 配置并编译项目
+    - name: Build ktorrent for Windows
+      run: |
+        # 创建 build 目录
+        mkdir build
+        cd build
+        
+        # 使用 cmake 配置项目
+        # 指定安装前缀，并让 CMake 自动查找交叉编译工具链
+        cmake .. \
+          -DCMAKE_INSTALL_PREFIX=/opt/kde \
+          -DCMAKE_TOOLCHAIN_FILE=/opt/craft/cmake/toolchain-windows-msvc2019.cmake
+        
+        # 开始编译，使用多个核心加速
+        make -j$(nproc)

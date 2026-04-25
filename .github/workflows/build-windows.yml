@@ -22,12 +22,12 @@ jobs:
       - name: Configure Git safe directory
         run: git config --global --add safe.directory "*"
 
-      # 正确克隆 vcpkg（官方 + 国内加速）
-      - name: Setup vcpkg
-        run: |
-          git clone --depth 1 https://ghproxy.net/https://github.com/microsoft/vcpkg.git
-          .\vcpkg\bootstrap-vcpkg.bat
+ # 克隆 vcpkg（官方源，稳定）
+git clone https://github.com/microsoft/vcpkg.git
 
+# 进入目录并执行启动脚本
+cd vcpkg
+.\bootstrap-vcpkg.bat
       # 安装所有依赖（去掉了失效的 qtpackages，直接用官方 vcpkg 端口）
       - name: Install dependencies via vcpkg
         run: |

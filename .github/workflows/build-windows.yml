@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       # ✅ 修复：直接使用官方地址，不要加 mirror.gcr.io
-      image: registry.kde.org/craft/craft-blueprints:kf5-qt5-windows-msvc2019
+      image: registry.cn-hangzhou.aliyuncs.com/google_containers/registry.kde.org/craft/craft-blueprints:kf5-qt5-windows-msvc2019
 
     steps:
       - name: Checkout ktorrent source code
